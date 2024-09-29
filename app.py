@@ -6,7 +6,10 @@ from docx import Document
 from datetime import datetime
 from io import BytesIO
 
-# Function to find the offset between master and sample segments
+# Increase max file size to 5 GB
+st.set_option('server.maxUploadSize', 5000)
+
+# Function to find the offset between master and sample segments (no change)
 def find_offset(master_segment, sample_segment, sr):
     correlation = np.correlate(master_segment, sample_segment, mode='full')
     max_corr_index = np.argmax(correlation)
@@ -14,19 +17,7 @@ def find_offset(master_segment, sample_segment, sr):
     offset_ms = (offset_samples / sr) * 1000  # Convert to milliseconds
     return offset_ms
 
-# Move the process_segment_data function to the top level
-def process_segment_data(args):
-    interval, master, sample, sr_master, segment_length = args
-    start = interval * sr_master
-    end = start + segment_length * sr_master  # Segment of defined length
-    if end <= len(master) and end <= len(sample):
-        master_segment = master[start:end]
-        sample_segment = sample[start:end]
-        offset = find_offset(master_segment, sample_segment, sr_master)
-        return (interval // 60, offset)
-    return None
-
-# Function to generate DOCX with results
+# Function to generate DOCX with results (no change)
 def generate_docx(results, intervals):
     doc = Document()
 
@@ -48,7 +39,7 @@ def generate_docx(results, intervals):
     # Fill the table with intervals and results
     for interval in intervals:
         row_cells = table.add_row().cells
-        row_cells[0].text = f"{interval // 60} mins"  # Convert seconds to minutes
+        row_cells[0].text = f"{interval // 60} mins"
         for i, sample_name in enumerate(device_names):
             result = next((offset for (intv, offset) in results[sample_name] if intv == interval // 60), None)
             row_cells[i + 1].text = f"{result:.2f} ms" if result is not None else "N/A"
@@ -63,8 +54,8 @@ st.title("Audio Sync Offset Finder")
 st.write("Upload a master track and one or more sample tracks to compare.")
 
 # File upload
-master_file = st.file_uploader("Upload Master Track", type=["wav"])
-sample_files = st.file_uploader("Upload Sample Tracks", type=["wav"], accept_multiple_files=True)
+master_file = st.file_uploader("Upload Master Track (up to 5 GB)", type=["wav"])
+sample_files = st.file_uploader("Upload Sample Tracks (up to 5 GB)", type=["wav"], accept_multiple_files=True)
 
 # Sampling rate and segment settings
 low_sr = st.slider("Select lower sampling rate for faster processing", 4000, 16000, 4000)
