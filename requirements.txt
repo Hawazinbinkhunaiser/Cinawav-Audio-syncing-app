@@ -2,4 +2,5 @@ librosa
 matplotlib
 numpy
 streamlit
-docx
+python-docx>=0.8.11
+
