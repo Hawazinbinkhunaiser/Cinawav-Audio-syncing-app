@@ -149,23 +149,18 @@ if st.button("Process"):
     if master_file and sample_files:
         st.write("Processing started...")
 
-        # Load the master track
-        master_path = master_file.name  # Get the path from the uploaded file
-        master, sr_master = librosa.load(master_file, sr=low_sr)
-
+        # Get paths for uploaded files
+        master_path = master_file.name
+        master_file.seek(0)  # Reset file pointer to the beginning
         all_sync_results = {}
         all_dropout_results = {}
 
         for sample_file in sample_files:
-            sample_path = sample_file.name  # Get the path from the uploaded file
-            sample, sr_sample = librosa.load(sample_file, sr=low_sr)
-
-            # Resample if the sampling rates do not match
-            if sr_master != sr_sample:
-                sample = librosa.resample(sample, sr_sample, sr_master)
+            sample_path = sample_file.name
+            sample_file.seek(0)  # Reset file pointer to the beginning
 
             # Process sync offsets
-            args = [(interval, master_path, sample_path, sr_master, segment_length) for interval in intervals]
+            args = [(interval, master_path, sample_path, low_sr, segment_length) for interval in intervals]
 
             with ProcessPoolExecutor() as executor:
                 sync_results = list(filter(None, executor.map(lambda x: process_segment_data(*x), args)))
