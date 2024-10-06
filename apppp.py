@@ -16,11 +16,7 @@ def find_offset(master_segment, sample_segment, sr):
     offset_ms = (offset_samples / sr) * 1000  # Convert to milliseconds
     return offset_ms
 
-def process_segment_data(interval, master_path, sample_path, sr, segment_length):
-    # Load the audio data within the process
-    master, _ = librosa.load(master_path, sr=None)
-    sample, _ = librosa.load(sample_path, sr=None)
-
+def process_segment_data(interval, master, sample, sr, segment_length):
     start = interval * sr
     end = start + segment_length * sr  # Segment of defined length
     if end <= len(master) and end <= len(sample):
@@ -38,11 +34,7 @@ def format_time(seconds):
     return f'{hours:02d}:{minutes:02d}:{secs:06.3f}'
 
 # Function to detect audio dropouts
-def detect_dropouts(file_data, dropout_db_threshold=-20, min_duration_ms=100):
-    # Load the audio file
-    y, sr = librosa.load(file_data, sr=None)
-
-    # Improved time resolution by reducing hop length
+def detect_dropouts(y, sr, dropout_db_threshold=-20, min_duration_ms=100):
     hop_length = 256  # Reduced hop length for better time resolution
     frame_length = hop_length / sr * 1000  # ms per frame
 
@@ -76,7 +68,7 @@ def detect_dropouts(file_data, dropout_db_threshold=-20, min_duration_ms=100):
         duration_ms = (end_time - start_time) * 1000
         dropouts.append((start_time, end_time, duration_ms))
 
-    return dropouts, y, sr
+    return dropouts
 
 # Function to plot waveform with dropouts
 def plot_waveform_with_dropouts(y, sr, dropouts):
@@ -149,18 +141,18 @@ if st.button("Process"):
     if master_file and sample_files:
         st.write("Processing started...")
 
-        # Get paths for uploaded files
-        master_path = master_file.name
-        master_file.seek(0)  # Reset file pointer to the beginning
+        # Load master audio
+        master, _ = librosa.load(master_file, sr=low_sr)
+
         all_sync_results = {}
         all_dropout_results = {}
 
         for sample_file in sample_files:
-            sample_path = sample_file.name
-            sample_file.seek(0)  # Reset file pointer to the beginning
+            # Load sample audio
+            sample, _ = librosa.load(sample_file, sr=low_sr)
 
             # Process sync offsets
-            args = [(interval, master_path, sample_path, low_sr, segment_length) for interval in intervals]
+            args = [(interval, master, sample, low_sr, segment_length) for interval in intervals]
 
             with ProcessPoolExecutor() as executor:
                 sync_results = list(filter(None, executor.map(lambda x: process_segment_data(*x), args)))
@@ -168,7 +160,7 @@ if st.button("Process"):
             all_sync_results[sample_file.name] = sync_results
 
             # Process dropout detection
-            dropouts, y, sr = detect_dropouts(sample_file)
+            dropouts = detect_dropouts(sample, low_sr)
             all_dropout_results[sample_file.name] = dropouts
 
             # Display Sync results
