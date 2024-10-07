@@ -7,6 +7,7 @@ from datetime import datetime
 from io import BytesIO
 import matplotlib.pyplot as plt
 import librosa.display
+import tempfile
 
 # Function to find the offset between master and sample segments
 def find_offset(master_segment, sample_segment, sr):
@@ -76,9 +77,9 @@ def format_time(seconds):
     return f'{hours:02d}:{minutes:02d}:{secs:06.3f}'
 
 # Function to detect audio dropouts
-def detect_dropouts(file_data, dropout_db_threshold=-20, min_duration_ms=100):
+def detect_dropouts(file_path, dropout_db_threshold=-20, min_duration_ms=100):
     # Load the audio file
-    y, sr = librosa.load(file_data, sr=None)
+    y, sr = librosa.load(file_path, sr=None)
 
     # Improved time resolution by reducing hop length
     hop_length = 256  # Reduced hop length for better time resolution
@@ -135,13 +136,19 @@ if st.button("Process"):
         st.write("Processing started...")
 
         # Load the master track
-        master, sr_master = librosa.load(master_file, sr=low_sr)
+        with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
+            tmp.write(master_file.getvalue())
+            tmp.flush()
+            master, sr_master = librosa.load(tmp.name, sr=low_sr)
 
         all_results = {}
         all_dropouts = {}
 
         for sample_file in sample_files:
-            sample, sr_sample = librosa.load(sample_file, sr=low_sr)
+            with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
+                tmp.write(sample_file.getvalue())
+                tmp.flush()
+                sample, sr_sample = librosa.load(tmp.name, sr=low_sr)
 
             # Resample if the sampling rates do not match
             if sr_master != sr_sample:
@@ -155,7 +162,10 @@ if st.button("Process"):
             all_results[sample_file.name] = results
 
             # Detect dropouts in the sample track
-            dropouts = detect_dropouts(sample_file)
+            with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
+                tmp.write(sample_file.getvalue())
+                tmp.flush()
+                dropouts = detect_dropouts(tmp.name)
             all_dropouts[sample_file.name] = dropouts
 
         st.write("Processing completed.")
