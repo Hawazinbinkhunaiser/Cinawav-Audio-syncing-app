@@ -95,14 +95,16 @@ if m4a_file:
     st.write("File uploaded. Extracting channels...")
 
     # Save M4A file to temp location
-    with open("input_file.m4a", "wb") as f:
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.m4a') as f:
         f.write(m4a_file.getbuffer())
-    input_file = "input_file.m4a"
+        input_file = f.name
+    
+    st.write(f"Saved uploaded file to: {input_file}")
     
     # Extract each channel using FFmpeg
     output_files = []
     for name, channel in channels.items():
-        output_file = f"{name.replace(' ', '_').lower()}.wav"
+        output_file = tempfile.NamedTemporaryFile(delete=False, suffix='.wav').name
         command = f'ffmpeg -i "{input_file}" -filter_complex "pan=mono|c0={channel}" "{output_file}"'
         subprocess.run(command, shell=True)
         output_files.append(output_file)
@@ -110,7 +112,7 @@ if m4a_file:
 
     # Assign the third channel (Center) as the master track
     master_track = output_files[2]
-    st.write(f"Center channel ({output_files[2]}) selected as master track.")
+    st.write(f"Center channel selected as master track: {master_track}")
 
     # Proceed to sync and dropout detection using existing logic
     low_sr = st.slider("Select lower sampling rate for faster processing", 4000, 16000, 4000)
@@ -121,8 +123,13 @@ if m4a_file:
         st.write("Processing started...")
 
         # Load the master track
-        master, sr_master = librosa.load(master_track, sr=low_sr)
-        
+        try:
+            master, sr_master = librosa.load(master_track, sr=low_sr)
+            st.write(f"Loaded master track: {master_track}")
+        except FileNotFoundError as e:
+            st.error(f"File not found: {master_track}. Please check the path and try again.")
+            st.stop()
+
         all_results = {}
         all_dropouts = {}
         all_plots = {}
