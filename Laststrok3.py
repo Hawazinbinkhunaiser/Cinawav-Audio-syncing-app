@@ -164,11 +164,16 @@ if uploaded_file is not None:
         f.write(uploaded_file.getbuffer())
     input_file = "input_file.m4a"
     
-    st.write("File uploaded successfully. Please select the window size and learning rate for the analysis.")
+    st.write("File uploaded successfully. Please select the following parameters for the analysis.")
 
-    # Select window size and learning rate
-    window_size = st.select_slider("Select window size (seconds)", options=[2, 5, 10, 30, 60], value=10)
-    learning_rate = st.select_slider("Select learning rate", options=[0.1, 0.5, 1.0, 2.0, 5.0], value=1.0)
+    # Select sampling rate
+    sampling_rate = st.select_slider("Select lower sampling rate for faster processing", options=[4000, 8000, 16000, 32000, 44100], value=16000)
+
+    # Select segment length
+    segment_length = st.select_slider("Segment length (seconds)", options=[2, 5, 10, 30, 60, 120], value=10)
+
+    # Select intervals
+    intervals = st.multiselect("Select intervals (in seconds)", options=[60, 900, 1800, 2700, 3600], default=[60, 900, 1800, 2700, 3600])
 
     # Start processing button
     if st.button("Process"):
@@ -178,7 +183,7 @@ if uploaded_file is not None:
         output_files = []
         for name, channel in channels.items():
             output_file = f"{name.replace(' ', '_').lower()}.wav"
-            command = f'ffmpeg -i "{input_file}" -filter_complex "pan=mono|c0={channel}" "{output_file}"'
+            command = f'ffmpeg -i "{input_file}" -filter_complex "pan=mono|c0={channel}" -ar {sampling_rate} "{output_file}"'
             subprocess.run(command, shell=True)
             output_files.append(output_file)
             st.write(f"Extracted {name} to {output_file}")
@@ -202,8 +207,7 @@ if uploaded_file is not None:
                 if sr_master != sr_sample:
                     sample = librosa.resample(sample, sr_sample, sr_master)
 
-                intervals = [60, 900, 1800, 2700, 3600]
-                args = [(interval, master, sample, sr_master, window_size) for interval in intervals]
+                args = [(interval, master, sample, sr_master, segment_length) for interval in intervals]
 
                 with ProcessPoolExecutor() as executor:
                     results = list(filter(None, executor.map(process_segment_data, args)))
