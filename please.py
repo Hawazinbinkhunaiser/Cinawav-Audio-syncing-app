@@ -180,52 +180,51 @@ if uploaded_file is not None:
 
     # Set center channel as master file
     master_file = "center_(fc).wav"
+    
+    # Check if the master file exists before loading
+    if not os.path.exists(master_file):
+        st.error(f"Master file '{master_file}' not found. Please ensure that the extraction was successful.")
+    else:
+        # Sampling rate and segment settings
+        low_sr = st.slider("Select lower sampling rate for faster processing", 4000, 16000, 4000)
+        segment_length = st.slider("Segment length (seconds)", 2, 120, 10)
+        intervals = st.multiselect("Select intervals (in seconds)", options=[60, 900, 1800, 2700, 3600, 4500, 5400, 6300], default=[60, 900, 1800, 2700, 3600])
 
-    # Sampling rate and segment settings
-    low_sr = st.slider("Select lower sampling rate for faster processing", 4000, 16000, 4000)
-    segment_length = st.slider("Segment length (seconds)", 2, 120, 10)
-    intervals = st.multiselect("Select intervals (in seconds)", options=[60, 900, 1800, 2700, 3600, 4500, 5400, 6300], default=[60, 900, 1800, 2700, 3600])
+        # Add a "Process" button
+        if st.button("Process"):
+            st.write("Processing started...")
 
-    # Add a "Process" button
-    if st.button("Process"):
-        st.write("Processing started...")
+            # Load the master track
+            master, sr_master = librosa.load(master_file, sr=low_sr)
 
-        # Load the master track
-        master, sr_master = librosa.load(master_file, sr=low_sr)
+            all_results = {}
+            all_dropouts = {}
+            all_plots = {}
 
-        all_results = {}
-        all_dropouts = {}
-        all_plots = {}
+            for sample_file in output_files:
+                if sample_file != master_file:  # Skip the master file itself
+                    sample, sr_sample = librosa.load(sample_file, sr=low_sr)
+                    results = []
+                    dropouts = detect_dropouts(sample_file)
+                    all_dropouts[sample_file] = dropouts
+                    plot_file_name = f"dropouts_plot_{sample_file.replace(' ', '_').lower()}.png"
+                    plot_waveform_with_dropouts(sample, sr_sample, dropouts, plot_file_name)
+                    all_plots[sample_file] = plot_file_name
 
-        for sample_file in output_files:
-            if sample_file != master_file:
-                sample, sr_sample = librosa.load(sample_file, sr=low_sr)
+                    with ProcessPoolExecutor() as executor:
+                        args = [(interval, master, sample, sr_master, segment_length) for interval in intervals]
+                        results = list(executor.map(process_segment_data, args))
 
-                # Resample if the sample rate differs
-                if sr_sample != sr_master:
-                    sample = librosa.resample(sample, sr_sample, sr_master)
+                    # Filter out None results and create a dictionary for the results
+                    all_results[sample_file] = [(interval, offset) for interval, offset in results if offset is not None]
 
-                # Segment processing in parallel
-                args_list = [(interval, master, sample, sr_master, segment_length) for interval in intervals]
-                with ProcessPoolExecutor() as executor:
-                    results = list(executor.map(process_segment_data, args_list))
-                results = [(interval, offset) for interval, offset in results if offset is not None]
-                all_results[sample_file] = results
+            # Generate the DOCX report
+            doc = generate_docx(all_results, intervals, all_dropouts, all_plots)
 
-                # Dropout detection
-                dropouts = detect_dropouts(sample_file)
-                all_dropouts[sample_file] = dropouts
+            # Save DOCX to a BytesIO object
+            doc_io = BytesIO()
+            doc.save(doc_io)
+            doc_io.seek(0)
 
-                # Plotting waveform with dropouts
-                plot_file = f"{sample_file.replace('.wav', '')}_dropout_plot.png"
-                plot_waveform_with_dropouts(sample, sr_master, dropouts, plot_file)
-                all_plots[sample_file] = plot_file
-
-        st.write("Processing complete. Generating report...")
-
-        # Generate and download the DOCX report
-        doc = generate_docx(all_results, intervals, all_dropouts, all_plots)
-        doc_io = BytesIO()
-        doc.save(doc_io)
-        doc_io.seek(0)
-        st.download_button("Download Report", data=doc_io, file_name="sync_results.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            st.write("Processing complete. Here’s your download link:")
+            st.download_button("Download Results", doc_io, file_name="sync_analysis_report.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
