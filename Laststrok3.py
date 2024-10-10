@@ -164,58 +164,66 @@ if uploaded_file is not None:
         f.write(uploaded_file.getbuffer())
     input_file = "input_file.m4a"
     
-    st.write("File uploaded successfully. Identifying and extracting audio channels...")
+    st.write("File uploaded successfully. Please select the window size and learning rate for the analysis.")
 
-    # Step 2: Extract each channel using FFmpeg pan filter
-    output_files = []
-    for name, channel in channels.items():
-        output_file = f"{name.replace(' ', '_').lower()}.wav"
-        command = f'ffmpeg -i "{input_file}" -filter_complex "pan=mono|c0={channel}" "{output_file}"'
-        subprocess.run(command, shell=True)
-        output_files.append(output_file)
-        st.write(f"Extracted {name} to {output_file}")
+    # Select window size and learning rate
+    window_size = st.select_slider("Select window size (seconds)", options=[2, 5, 10, 30, 60], value=10)
+    learning_rate = st.select_slider("Select learning rate", options=[0.1, 0.5, 1.0, 2.0, 5.0], value=1.0)
 
-    st.write("Extraction complete. Measuring sync data and dropouts...")
+    # Start processing button
+    if st.button("Process"):
+        st.write("Processing started...")
 
-    # Load the master track (Center channel)
-    master_file = "center_fc.wav"
-    master, sr_master = librosa.load(master_file, sr=None)
+        # Step 2: Extract each channel using FFmpeg pan filter
+        output_files = []
+        for name, channel in channels.items():
+            output_file = f"{name.replace(' ', '_').lower()}.wav"
+            command = f'ffmpeg -i "{input_file}" -filter_complex "pan=mono|c0={channel}" "{output_file}"'
+            subprocess.run(command, shell=True)
+            output_files.append(output_file)
+            st.write(f"Extracted {name} to {output_file}")
 
-    all_results = {}
-    all_dropouts = {}
-    all_plots = {}
+        st.write("Extraction complete. Measuring sync data and dropouts...")
 
-    # Measure sync data and dropouts for each channel
-    for output_file in output_files:
-        if output_file != master_file:
-            sample, sr_sample = librosa.load(output_file, sr=None)
+        # Load the master track (Center channel)
+        master_file = "center_fc.wav"
+        master, sr_master = librosa.load(master_file, sr=None)
 
-            # Resample if the sampling rates do not match
-            if sr_master != sr_sample:
-                sample = librosa.resample(sample, sr_sample, sr_master)
+        all_results = {}
+        all_dropouts = {}
+        all_plots = {}
 
-            intervals = [60, 900, 1800, 2700, 3600]
-            args = [(interval, master, sample, sr_master, 10) for interval in intervals]
+        # Measure sync data and dropouts for each channel
+        for output_file in output_files:
+            if output_file != master_file:
+                sample, sr_sample = librosa.load(output_file, sr=None)
 
-            with ProcessPoolExecutor() as executor:
-                results = list(filter(None, executor.map(process_segment_data, args)))
+                # Resample if the sampling rates do not match
+                if sr_master != sr_sample:
+                    sample = librosa.resample(sample, sr_sample, sr_master)
 
-            all_results[output_file] = results
+                intervals = [60, 900, 1800, 2700, 3600]
+                args = [(interval, master, sample, sr_master, window_size) for interval in intervals]
 
-            # Detect dropouts in the sample track
-            dropouts = detect_dropouts(output_file)
-            all_dropouts[output_file] = dropouts
+                with ProcessPoolExecutor() as executor:
+                    results = list(filter(None, executor.map(process_segment_data, args)))
 
-            # Plot waveform with dropouts
-            plot_file_name = f"{output_file}_plot.png"
-            plot_waveform_with_dropouts(sample, sr_master, dropouts, plot_file_name)
-            all_plots[output_file] = plot_file_name
+                all_results[output_file] = results
 
-    st.write("Measurement complete. Download your results below:")
+                # Detect dropouts in the sample track
+                dropouts = detect_dropouts(output_file)
+                all_dropouts[output_file] = dropouts
 
-    # Generate DOCX and provide download option
-    doc = generate_docx(all_results, intervals, all_dropouts, all_plots)
-    doc_buffer = BytesIO()
-    doc.save(doc_buffer)
-    doc_buffer.seek(0)
-    st.download_button("Download Results as DOCX", data=doc_buffer.getvalue(), file_name="audio_sync_results.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                # Plot waveform with dropouts
+                plot_file_name = f"{output_file}_plot.png"
+                plot_waveform_with_dropouts(sample, sr_master, dropouts, plot_file_name)
+                all_plots[output_file] = plot_file_name
+
+        st.write("Measurement complete. Download your results below:")
+
+        # Generate DOCX and provide download option
+        doc = generate_docx(all_results, intervals, all_dropouts, all_plots)
+        doc_buffer = BytesIO()
+        doc.save(doc_buffer)
+        doc_buffer.seek(0)
+        st.download_button("Download Results as DOCX", data=doc_buffer.getvalue(), file_name="audio_sync_results.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
