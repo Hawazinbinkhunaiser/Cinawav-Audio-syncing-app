@@ -161,9 +161,9 @@ channels = {
 
 if uploaded_file is not None:
     # Save the uploaded file to a temporary location
-    with open("input_file.m4a", "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    input_file = "input_file.m4a"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".m4a") as temp_file:
+        temp_file.write(uploaded_file.getbuffer())
+        input_file = temp_file.name
 
     st.write("File uploaded successfully. Extracting audio channels...")
 
@@ -201,53 +201,31 @@ if uploaded_file is not None:
             if sample_file != master_file:
                 sample, sr_sample = librosa.load(sample_file, sr=low_sr)
 
-                # Resample if the sampling rates do not match
-                if sr_master != sr_sample:
+                # Resample if the sample rate differs
+                if sr_sample != sr_master:
                     sample = librosa.resample(sample, sr_sample, sr_master)
 
-                args = [(interval, master, sample, sr_master, segment_length) for interval in intervals]
-
+                # Segment processing in parallel
+                args_list = [(interval, master, sample, sr_master, segment_length) for interval in intervals]
                 with ProcessPoolExecutor() as executor:
-                    results = list(filter(None, executor.map(process_segment_data, args)))
-
+                    results = list(executor.map(process_segment_data, args_list))
+                results = [(interval, offset) for interval, offset in results if offset is not None]
                 all_results[sample_file] = results
 
-                # Detect dropouts in the sample track
+                # Dropout detection
                 dropouts = detect_dropouts(sample_file)
                 all_dropouts[sample_file] = dropouts
 
-                # Plot waveform with dropouts
-                plot_file_name = f"{sample_file}_plot.png"
-                plot_waveform_with_dropouts(sample, sr_master, dropouts, plot_file_name)
-                all_plots[sample_file] = plot_file_name
+                # Plotting waveform with dropouts
+                plot_file = f"{sample_file.replace('.wav', '')}_dropout_plot.png"
+                plot_waveform_with_dropouts(sample, sr_master, dropouts, plot_file)
+                all_plots[sample_file] = plot_file
 
-        st.write("Processing completed.")
-        
-        # Display results
-        for sample_name, results in all_results.items():
-            st.subheader(f"Results for {sample_name}:")
-            for interval, offset in results:
-                st.write(f"At {interval} mins: Offset = {offset:.2f} ms")
-        
-        # Display dropouts
-        for sample_name, dropouts in all_dropouts.items():
-            st.subheader(f"Detected Dropouts for {sample_name}:")
-            if dropouts:
-                for dropout in dropouts:
-                    start, end, duration_ms = dropout
-                    st.write(f"Start: {format_time(start)} | End: {format_time(end)} | Duration: {duration_ms:.0f} ms")
-            else:
-                st.write("No significant dropouts detected.")
+        st.write("Processing complete. Generating report...")
 
-        # Generate DOCX and provide download option
+        # Generate and download the DOCX report
         doc = generate_docx(all_results, intervals, all_dropouts, all_plots)
-        doc_buffer = BytesIO()
-        doc.save(doc_buffer)
-        doc_buffer.seek(0)
-        st.download_button("Download Results as DOCX", data=doc_buffer.getvalue(), file_name="audio_sync_results.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-
-    # Clean up temporary files
-    for file in output_files + ["input_file.m4a"]:
-        os.remove(file)
-else:
-    st.warning("Please upload an M4A file to begin processing.")
+        doc_io = BytesIO()
+        doc.save(doc_io)
+        doc_io.seek(0)
+        st.download_button("Download Report", data=doc_io, file_name="sync_results.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
