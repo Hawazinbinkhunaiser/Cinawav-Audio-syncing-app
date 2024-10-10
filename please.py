@@ -22,13 +22,13 @@ def find_offset(master_segment, sample_segment, sr):
 
 # Process the segment data
 def process_segment_data(args):
-    interval, master, sample, sr_master, segment_length = args
-    start = interval * sr_master
-    end = start + segment_length * sr_master  # Segment of defined length
+    interval, master, sample, sr = args
+    start = interval * sr
+    end = start + segment_length * sr  # Segment of defined length
     if end <= len(master) and end <= len(sample):
         master_segment = master[start:end]
         sample_segment = sample[start:end]
-        offset = find_offset(master_segment, sample_segment, sr_master)
+        offset = find_offset(master_segment, sample_segment, sr)
         return (interval // 60, offset)
     return None
 
@@ -204,27 +204,45 @@ if uploaded_file is not None:
             for sample_file in output_files:
                 if sample_file != master_file:  # Skip the master file itself
                     sample, sr_sample = librosa.load(sample_file, sr=low_sr)
+                    # Initialize result and dropout tracking
                     results = []
-                    dropouts = detect_dropouts(sample_file)
+                    dropouts = detect_dropouts(sample_file)  # Detect dropouts in the sample file
+
+                    # Save dropouts for later use
                     all_dropouts[sample_file] = dropouts
-                    plot_file_name = f"dropouts_plot_{sample_file.replace(' ', '_').lower()}.png"
-                    plot_waveform_with_dropouts(sample, sr_sample, dropouts, plot_file_name)
-                    all_plots[sample_file] = plot_file_name
 
+                    # Prepare for parallel processing
                     with ProcessPoolExecutor() as executor:
-                        args = [(interval, master, sample, sr_master, segment_length) for interval in intervals]
-                        results = list(executor.map(process_segment_data, args))
+                        segment_data = [(interval, master, sample, sr_master) for interval in intervals]
+                        results = list(filter(None, executor.map(process_segment_data, segment_data)))
 
-                    # Filter out None results and create a dictionary for the results
-                    all_results[sample_file] = [(interval, offset) for interval, offset in results if offset is not None]
+                    all_results[sample_file] = results
 
-            # Generate the DOCX report
+                    # Plot waveform with detected dropouts
+                    plot_file = f"{sample_file.replace('.wav', '_dropouts.png')}"
+                    plot_waveform_with_dropouts(sample, sr_sample, dropouts, plot_file)
+                    all_plots[sample_file] = plot_file
+
+            # Generate DOCX report
             doc = generate_docx(all_results, intervals, all_dropouts, all_plots)
+            
+            # Create a BytesIO buffer to save the document
+            buffer = BytesIO()
+            doc.save(buffer)
+            buffer.seek(0)
 
-            # Save DOCX to a BytesIO object
-            doc_io = BytesIO()
-            doc.save(doc_io)
-            doc_io.seek(0)
+            # Provide a download link for the generated DOCX
+            st.download_button(
+                label="Download Sync Analysis Report",
+                data=buffer,
+                file_name="sync_analysis_report.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
 
-            st.write("Processing complete. Here’s your download link:")
-            st.download_button("Download Results", doc_io, file_name="sync_analysis_report.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    # Clean up temporary files
+    if os.path.exists(input_file):
+        os.remove(input_file)
+    for output_file in output_files:
+        if os.path.exists(output_file):
+            os.remove(output_file)
+
