@@ -3,5 +3,5 @@ matplotlib
 numpy
 streamlit
 python-docx>=0.8.11
-streamlit-audio-recorder
+streamlit-webrtc
 
