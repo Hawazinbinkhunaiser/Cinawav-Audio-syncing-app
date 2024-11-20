@@ -1,16 +1,7 @@
 
 import streamlit as st
-from streamlit_audio_recorder import audio_recorder
+from streamlit_webrtc import webrtc_streamer
 
-# Title
-st.title("Audio Recorder Demo")
+st.title("Audio Recorder with Streamlit")
 
-# Record Audio
-audio_bytes = audio_recorder()
-
-# Play back the recorded audio
-if audio_bytes:
-    st.audio(audio_bytes, format="audio/wav")
-    with open("output.wav", "wb") as f:
-        f.write(audio_bytes)
-        st.success("Audio saved as output.wav")
+webrtc_streamer(key="audio-recorder", media_stream_constraints={"audio": True})
