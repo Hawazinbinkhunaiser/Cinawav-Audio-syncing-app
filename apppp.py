@@ -1,4 +1,3 @@
-pip install streamlit-audio-recorder
 
 import streamlit as st
 from streamlit_audio_recorder import audio_recorder
