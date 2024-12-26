@@ -4,4 +4,4 @@ numpy
 streamlit
 python-docx>=0.8.11
 streamlit-webrtc
-
+psutil
